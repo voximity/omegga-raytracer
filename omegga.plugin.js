@@ -157,16 +157,24 @@ class Ray {
         else normal = new Vector3(0, 0, s.z);
         return [tn, tf, normal];
     }
+
+    // Get a point down the ray, t units.
+    pointAlong(t) {
+        return this.origin.add(this.direction.normalize().scale(t));
+    }
 }
 
 class Scene {
-    constructor(camera, dc, ac, lv) {
+    constructor(camera, dc, ac, lv, castShadows, sc) {
         this.camera = camera;
         this.objects = [];
         this.diffuseCoefficient = dc || 1;
         this.ambientCoefficient = ac || 0.2;
         this.atmosphere = new Atmosphere([206, 225, 245], [144, 195, 245]);
         this.lightVector = (lv || new Vector3(-1, -1, -1)).normalize().negate();
+        this.castShadows = castShadows == null ? true : castShadows;
+        this.shadowCoefficient = sc || 0.4;
+        this.maxReflectionDepth = 1;
     }
 
     async populateScene(save, omegga) {
@@ -194,7 +202,8 @@ class Scene {
             }
 
             const color = typeof(brick.color) == "number" ? save.colors[brick.color] : brick.color;
-            this.objects.push(new AxisAlignedBoxObject(pos, new Vector3(nsx, nsy, nsz), color.slice(0, 3)));
+            const reflectiveness = save.materials[brick.material_index] == "BMC_Metallic" ? 0.6 : 0;
+            this.objects.push(new AxisAlignedBoxObject(pos, new Vector3(nsx, nsy, nsz), color.slice(0, 3), reflectiveness));
         });
 
         // players, todo: make this a config option
@@ -212,6 +221,51 @@ class Scene {
         this.objects.push(new PlaneObject(new Vector3(0, 0, 0), new Vector3(0, 0, 1), [58, 166, 60]));
     }
 
+    // Returns the object {object: <object intersected>, near: <tnear>, far: <tfar>, normal: <normal>}
+    castRay(ray, objects) {
+        const intersectedObjects = [];
+        objects.forEach((object) => {
+            const results = object.intersectionWithRay(ray);
+            if (results != null)
+                intersectedObjects.push({object: object, near: results[0], far: results[1], normal: results[2]});
+        });
+
+        if (intersectedObjects.length == 0) {
+            return null;
+        } else if (intersectedObjects.length == 1) {
+            return intersectedObjects[0];
+        } else {
+            return intersectedObjects.sort((a, b) => a.near - b.near)[0]
+        }
+    }
+
+    getRayColor(ray, reflectionDepth) {
+        const hit = this.castRay(ray, this.objects);
+
+        if (hit == null) {
+            return this.atmosphere.colorFromVec(ray.direction);
+        } else {
+            const coeff = lerp(this.diffuseCoefficient, this.ambientCoefficient, Math.min(this.lightVector.angleBetween(hit.normal) / Math.PI * 0.5, 1));
+            var color = hit.object.color.slice(0, 3).map((c) => c * coeff);
+
+            // shadow calculation
+            if (this.castShadows) {
+                const shadowRay = new Ray(ray.pointAlong(hit.near).add(hit.normal.scale(0.01)), this.lightVector);
+                const shadowHit = this.castRay(shadowRay, this.objects);
+                if (shadowHit != null) color = color.map((c) => c * this.shadowCoefficient);
+            }
+
+            // reflection calculation
+            if (reflectionDepth < this.maxReflectionDepth && hit.object.reflectiveness > 0.1) {
+                const reflectionRay = new Ray(ray.pointAlong(hit.near).add(hit.normal.scale(0.01)), ray.direction.subtract(hit.normal.scale(2 * ray.direction.dot(hit.normal))));
+                const reflectionHitColor = this.getRayColor(reflectionRay, reflectionDepth + 1);
+                color = lerpCol(color, reflectionHitColor, hit.object.reflectiveness);
+            }
+
+            return color;
+        }
+    }
+
     render() {
         const w = this.camera.vw, h = this.camera.vh;
         var img = [];
@@ -219,28 +273,7 @@ class Scene {
             img[y] = [];
             for (var x = 0; x < w; x++) {
                 const ray = new Ray(this.camera.origin, this.camera.directionForScreenPoint(x, y));
-                const intersectedObjects = [];
-                this.objects.forEach((object) => {
-                    const results = object.intersectionWithRay(ray);
-                    if (results != null)
-                        intersectedObjects.push({object: object, near: results[0], far: results[1], normal: results[2]});
-                });
-
-                if (intersectedObjects.length == 0) {
-                    // no hit. just set the img at this point to atmosphere color
-                    img[y][x] = this.atmosphere.colorFromVec(ray.direction);
-                } else if (intersectedObjects.length == 1) {
-                    // one brick. this is easy, just get the color and set it
-                    const coeff = lerp(this.diffuseCoefficient, this.ambientCoefficient, this.lightVector.angleBetween(intersectedObjects[0].normal) / Math.PI);
-                    const [r, g, b, a] = intersectedObjects[0].object.color;
-                    img[y][x] = [r * coeff, g * coeff, b * coeff];
-                } else {
-                    // more than one brick
-                    const closest = intersectedObjects.sort((a, b) => a.near - b.near)[0];
-                    const coeff = lerp(this.diffuseCoefficient, this.ambientCoefficient, this.lightVector.angleBetween(closest.normal) / Math.PI);
-                    const [r, g, b, a] = closest.object.color;
-                    img[y][x] = [r * coeff, g * coeff, b * coeff];
-                }
+                img[y][x] = this.getRayColor(ray, 0);
             }
         }
         return img;
@@ -292,8 +325,9 @@ class Atmosphere {
 }
 
 class SceneObject {
-    constructor(color) {
+    constructor(color, reflectiveness) {
         this.color = color;
+        this.reflectiveness = reflectiveness || 0;
     }
 
     // Returns [t_near, t_far, hit_normal] if hit, otherwise returns null
@@ -303,8 +337,8 @@ class SceneObject {
 }
 
 class AxisAlignedBoxObject extends SceneObject {
-    constructor(pos, size, color) {
-        super(color);
+    constructor(pos, size, color, reflectiveness) {
+        super(color, reflectiveness);
         this.pos = pos;
         this.size = size;
     }
@@ -347,8 +381,8 @@ class PlaneObject extends SceneObject {
 }
 
 class CylinderObject extends SceneObject {
-    constructor(pa, pb, radius, color) {
-        super(color);
+    constructor(pa, pb, radius, color, reflectiveness) {
+        super(color, reflectiveness);
         this.pa = pa;
         this.pb = pb;
         this.radius = radius;
@@ -376,6 +410,7 @@ class CylinderObject extends SceneObject {
 }
 
 const lerp = (a, b, c) => a + (b - a) * c;
+const lerpCol = (a, b, c) => [lerp(a[0], b[0], c), lerp(a[1], b[1], c), lerp(a[2], b[2], c)];
 
 class Raytracer {
     constructor(omegga, config, store) {
@@ -391,7 +426,10 @@ class Raytracer {
             verticalFov: 50,
             diffuseCoefficient: 1,
             ambientCoefficient: 0.2,
-            lightVector: new Vector3(-0.3, -1, -1)
+            lightVector: new Vector3(-0.3, -1, -1),
+            castShadows: true,
+            shadowCoefficient: 0.4,
+            maxReflectionDepth: 3 // set to 0 to disable reflections
         };
 
         this.omegga.on("chatcmd:set", async (name, setting, ...values) => {
@@ -405,14 +443,23 @@ class Raytracer {
                 settings.verticalFov = parseInt(values[0]);
                 this.omegga.broadcast(`FOV set to ${settings.verticalFov}.`);
             } else if (setting == "diffuse" || setting == "diffuseCoefficient") {
-                setting.diffuseCoefficient = parseInt(values[0]);
+                settings.diffuseCoefficient = parseFloat(values[0]);
                 this.omegga.broadcast(`Diffuse coefficient set to ${settings.diffuseCoefficient}.`);
             } else if (setting == "ambient" || setting == "ambientCoefficient") {
-                setting.ambientCoefficient = parseInt(values[0]);
+                settings.ambientCoefficient = parseFloat(values[0]);
                 this.omegga.broadcast(`Ambient coefficient set to ${settings.ambientCoefficient}.`);
             } else if (setting == "light" || setting == "lightVector") {
-                setting.lightVector = new Vector3(...values.map((v) => parseInt(v)));
-                this.omegga.broadcast(`Light vector set to (${setting.lightVector.x}, ${setting.lightVector.y}, ${setting.lightVector.z}).`);
+                settings.lightVector = new Vector3(...values.map((v) => parseFloat(v)));
+                this.omegga.broadcast(`Light vector set to (${settings.lightVector.x}, ${settings.lightVector.y}, ${settings.lightVector.z}).`);
+            } else if (setting == "shadows") {
+                settings.castShadows = values[0] == "true" || values[0] == "on";
+                this.omegga.broadcast(`Casting shadows set to ${settings.castShadows}.`);
+            } else if (setting == "shadowCoefficient") {
+                setting.shadowCoefficient = parseFloat(values[0]);
+                this.omegga.broadcast(`Shadow coefficient set to ${settings.shadowCoefficient}.`);
+            } else if (setting == "reflectionDepth" || setting == "maxReflectionDepth") {
+                settings.maxReflectionDepth = parseInt(values[0]);
+                this.omegga.broadcast(`Max reflection depth set to ${settings.maxReflectionDepth}.`);
             } else {
                 this.omegga.broadcast(`Invalid setting name <code>${setting}</code>.`);
                 return;
@@ -428,21 +475,23 @@ class Raytracer {
             const save = await this.omegga.getSaveData();
 
             // start raytracing
-            const camera = new Camera(settings.width, settings.height, new Vector3(...pos), settings.verticalFov, (parseInt(yaw) || 0) * Math.PI / 180, (parseInt(pitch) || 0) * Math.PI / 180);
-            const scene = new Scene(camera, settings.diffuseCoefficient, settings.ambientCoefficient, settings.lightVector);
+            const camera = new Camera(settings.width, settings.height, new Vector3(...pos), settings.verticalFov, (parseFloat(yaw) || 0) * Math.PI / 180, (parseFloat(pitch) || 0) * Math.PI / 180);
+            const scene = new Scene(camera, settings.diffuseCoefficient, settings.ambientCoefficient, settings.lightVector, settings.castShadows, settings.shadowCoefficient);
+            scene.maxReflectionDepth = settings.maxReflectionDepth;
             this.omegga.broadcast("Scene initialized. Populating scene objects...");
             await scene.populateScene(save, this.omegga);
             this.omegga.broadcast("Scene populated. Rendering...");
             const img = scene.render();
 
             // image generated, load it into the world
+            const newPos = await player.getPosition();
             this.omegga.broadcast("Rendered. Importing save...");
             const brickGen = [];
             for (var y = 0; y < settings.height; y++) {
                 for (var x = 0; x < settings.width; x++) {
                     var col = img[y][x];
                     if (col == null) col = [255, 255, 255, 100]; else col = [...col, 255];
-                    const [px, py, pz] = pos.map((n) => Math.floor(n + 0.5));
+                    const [px, py, pz] = newPos.map((n) => Math.floor(n + 0.5));
                     const brick = {
                         "asset_name_index": 0,
                         "size": [1, 1, 1],
