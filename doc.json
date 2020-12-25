@@ -1,0 +1,31 @@
+{
+    "name": "Raytracer",
+    "description": "LOL dont ask",
+    "author": "x",
+    "config": {
+    },
+    "commands": [
+        {
+            "name": "!trace",
+            "description": "Run the raytracer from the viewer's POV",
+            "args": []
+        },
+        {
+            "name": "!set",
+            "description": "Set an option in the raytracer",
+            "example": "!set fov 120",
+            "args": [
+                {
+                    "name": "Setting",
+                    "description": "The setting to change",
+                    "required": true
+                },
+                {
+                    "name": "Value",
+                    "description": "The value to change the setting to",
+                    "required": true
+                }
+            ]
+        }
+    ]
+}
