@@ -175,6 +175,7 @@ class Scene {
         this.castShadows = castShadows == null ? true : castShadows;
         this.shadowCoefficient = sc || 0.4;
         this.maxReflectionDepth = 1;
+        this.renderPlayers = true;
     }
 
     async populateScene(save, omegga) {
@@ -206,16 +207,17 @@ class Scene {
             this.objects.push(new AxisAlignedBoxObject(pos, new Vector3(nsx, nsy, nsz), color.slice(0, 3), reflectiveness));
         });
 
-        // players, todo: make this a config option
-        const posns = await omegga.getAllPlayerPositions();
-        posns.forEach(async (obj) => {
-            const pos = new Vector3(...obj.pos);
-            if (pos.subtract(this.camera.origin).magnitude() < 5) return;
-            const pa = pos.subtract(new Vector3(0, 0, 20));
-            const pb = pos.add(new Vector3(0, 0, 20));
-            this.objects.push(new CylinderObject(pa, pb, 10, [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)]));
-            //this.objects.push(new AxisAlignedBoxObject(new Vector3(...obj.pos), new Vector3(10, 10, 30), [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)]));
-        });
+        if (this.renderPlayers) {
+            const posns = await omegga.getAllPlayerPositions();
+            posns.forEach(async (obj) => {
+                const pos = new Vector3(...obj.pos);
+                if (pos.subtract(this.camera.origin).magnitude() < 5) return;
+                const pa = pos.subtract(new Vector3(0, 0, 20));
+                const pb = pos.add(new Vector3(0, 0, 20));
+                this.objects.push(new CylinderObject(pa, pb, 10, [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)]));
+                //this.objects.push(new AxisAlignedBoxObject(new Vector3(...obj.pos), new Vector3(10, 10, 30), [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)]));
+            });
+        }
 
         // the ground plane
         this.objects.push(new PlaneObject(new Vector3(0, 0, 0), new Vector3(0, 0, 1), [58, 166, 60]));
@@ -436,7 +438,8 @@ class Raytracer {
             lightVector: new Vector3(-0.3, -1, -1),
             castShadows: true,
             shadowCoefficient: 0.4,
-            maxReflectionDepth: 3 // set to 0 to disable reflections
+            maxReflectionDepth: 3, // set to 0 to disable reflections
+            renderPlayers: true
         };
 
         this.omegga.on("chatcmd:set", async (name, setting, ...values) => {
@@ -467,6 +470,9 @@ class Raytracer {
             } else if (setting == "reflectionDepth" || setting == "maxReflectionDepth") {
                 settings.maxReflectionDepth = parseInt(values[0]);
                 this.omegga.broadcast(`Max reflection depth set to ${settings.maxReflectionDepth}.`);
+            } else if (setting == "renderPlayers") {
+                settings.renderPlayers = values[0] == "true" || values[0] == "on";
+                this.omegga.broadcast(`Rendering players set to ${settings.castShadows}.`);
             } else {
                 this.omegga.broadcast(`Invalid setting name <code>${setting}</code>.`);
                 return;
