@@ -195,7 +195,8 @@ class Scene {
                 nsz = sz;
             }
 
-            this.objects.push(new AxisAlignedBoxObject(pos, new Vector3(nsx, nsy, nsz), save.colors[brick.color]));
+            const color = typeof(brick.color) == "number" ? save.colors[brick.color] : brick.color;
+            this.objects.push(new AxisAlignedBoxObject(pos, new Vector3(nsx, nsy, nsz), color.slice(0, 3)));
         });
 
         // players, todo: make this a config option
