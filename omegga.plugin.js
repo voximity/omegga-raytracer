@@ -402,6 +402,7 @@ class CylinderObject extends SceneObject {
         h = Math.sqrt(h);
         var t = (-k1 - h) / k2;
         const y = baoc +  t * bard;
+        if (t < 0.0) return null;
         if (y > 0.0 && y < baba) return [t, t, (oc.add(ray.direction.scale(t)).subtract(ba.scale(y).scale(1/baba)).scale(1/this.radius))];
         t = ((y < 0 ? 0 : baba) - baoc) / bard;
         if (Math.abs(k1 + k2 * t) < h) return [t, t, ba.scale(y == 0 ? 0 : (y > 0 ? 1 : -1)).scale(1/baba)];
