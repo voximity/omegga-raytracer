@@ -246,7 +246,7 @@ class Scene {
             return this.atmosphere.colorFromVec(ray.direction);
         } else {
             const coeff = lerp(this.diffuseCoefficient, this.ambientCoefficient, Math.min(this.lightVector.angleBetween(hit.normal) / Math.PI * 0.5, 1));
-            var color = hit.object.color.slice(0, 3).map((c) => c * coeff);
+            var color = hit.object.sRGB().slice(0, 3).map((c) => c * coeff);
 
             // shadow calculation
             if (this.castShadows) {
@@ -333,6 +333,12 @@ class SceneObject {
     // Returns [t_near, t_far, hit_normal] if hit, otherwise returns null
     intersectionWithRay(ray) {
         return null;
+    }
+
+    sRGBchannel = (c) => c > 0.0031308 ? 1.055 * Math.pow(c, 1 / 2.4) - 0.055 : 12.92 * c;
+
+    sRGB() {
+        return this.color.map((c) => this.sRGBchannel(c / 255) * 255);
     }
 }
 
@@ -456,7 +462,7 @@ class Raytracer {
                 settings.castShadows = values[0] == "true" || values[0] == "on";
                 this.omegga.broadcast(`Casting shadows set to ${settings.castShadows}.`);
             } else if (setting == "shadowCoefficient") {
-                setting.shadowCoefficient = parseFloat(values[0]);
+                settings.shadowCoefficient = parseFloat(values[0]);
                 this.omegga.broadcast(`Shadow coefficient set to ${settings.shadowCoefficient}.`);
             } else if (setting == "reflectionDepth" || setting == "maxReflectionDepth") {
                 settings.maxReflectionDepth = parseInt(values[0]);
