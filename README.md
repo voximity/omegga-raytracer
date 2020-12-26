@@ -1,11 +1,11 @@
 # omegga-raytracer
 
-![Sample render](https://i.imgur.com/SE45oPP.jpeg)
+![Sample render](https://i.imgur.com/uxZ9M3Z.jpg)
 
-Cursed raytracer for Omegga.
+Cursed raytracer for Omegga, featuring shadows, reflections, transparency, and image compression.
 
 **WARNING:** Heavily unoptimized and impractical. Do not use for real purposes.
-This is an experiment and no brick optimizations are done, and for large builds,
+This is an experiment and only a few brick optimizations are done, and for large builds,
 is very slow.
 
 ## Installation
