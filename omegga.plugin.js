@@ -188,14 +188,18 @@ class Scene {
             var nsx = 0, nsy = 0, nsz = 0;
 
             // todo: test these, currently only dirs 4 and 5 work
-            if (dir == 0 || dir == 1) { // x
+            if (dir == 0) { // x
                 nsx = sz;
-                nsy = rot == 0 ? sx : sy;
-                nsz = rot == 0 ? sy : sx;
+                nsy = rot == 0 ? sy : sx;
+                nsz = rot == 0 ? sx : sy;
+            } else if (dir == 1) {
+                nsx = sz;
+                nsy = rot == 0 ? sy : sx;
+                nsz = rot == 0 ? sx : sy;
             } else if (dir == 2 || dir == 3) { // y
-                nsx = rot == 0 ? sx : sy;
+                nsx = rot == 0 ? sy : sx;
                 nsy = sz;
-                nsz = rot == 0 ? sy : sx;
+                nsz = rot == 0 ? sx : sy;
             } else if (dir == 4 || dir == 5) { // z, default
                 nsx = rot == 0 ? sx : sy;
                 nsy = rot == 0 ? sy : sx;
@@ -203,7 +207,7 @@ class Scene {
             }
 
             const color = typeof(brick.color) == "number" ? save.colors[brick.color] : brick.color;
-            const reflectiveness = save.materials[brick.material_index] == "BMC_Metallic" ? 0.6 : 0;
+            const reflectiveness = save.materials[brick.material_index] == "BMC_Metallic" ? 0.4 : 0; // REFLECTIVITY VALUE HARDCODED
             this.objects.push(new AxisAlignedBoxObject(pos, new Vector3(nsx, nsy, nsz), color.slice(0, 3), reflectiveness));
         });
 
@@ -282,6 +286,137 @@ class Scene {
     }
 }
 
+class Quadtree {
+    constructor(img) {
+        this.imageHeight = img.length;
+        this.imageWidth = img[0].length;
+        this.img = img;
+        this.width = nextHighestPowerOf2(Math.max(this.imageWidth, this.imageHeight));
+        this.depth = Math.log2(this.width);
+        this.tree = [];
+    }
+
+    createTree() {
+        this.tree = this.createBranch([]);
+    }
+
+    getPixelPosition(immediateDepth, branchWidth) {
+        return [immediateDepth % 2, immediateDepth > 1 ? 1 : 0].map((n) => n * branchWidth / 2);
+    }
+
+    createBranch(depthHistory) {
+        if ((this.depth - 1) - depthHistory.length > 0) {
+            return [
+                this.createBranch([...depthHistory, 0]),
+                this.createBranch([...depthHistory, 1]),
+                this.createBranch([...depthHistory, 2]),
+                this.createBranch([...depthHistory, 3])];
+        } else {
+            //console.log("Creating leaves");
+            const branch = [];
+            // Get pixels for this depthHistory
+            for (var i = 0; i < 4; i++) {
+                const pixelLocation = [0, 0];
+                for (var j = 0; j < depthHistory.length; j++) {
+                    const depthPosition = this.getPixelPosition(depthHistory[j], Math.pow(2, this.depth - j));
+                    pixelLocation[0] += depthPosition[0];
+                    pixelLocation[1] += depthPosition[1];
+                }
+                const finalDepthPosition = this.getPixelPosition(i, 2);
+                pixelLocation[0] += finalDepthPosition[0];
+                pixelLocation[1] += finalDepthPosition[1];
+                const [x, y] = pixelLocation;
+                if (x >= this.imageWidth || y >= this.imageHeight)
+                    branch[i] = null;
+                else
+                    branch[i] = this.img[y][x];
+            }
+            return branch;
+        }
+    }
+
+    optimizeTree() {
+        this.tree = this.optimizeBranch(this.tree);
+    }
+
+    optimizeBranch(branch) {
+        // if this is a leaf, then just don't do anything
+        if (branch.length != 4) return branch;
+
+        // first, try to optimize child branches
+        for (var i = 0; i < 4; i++) {
+            if (branch[i] != null && branch[i].length == 4) { // this is a branch
+                branch[i] = this.optimizeBranch(branch[i]);
+            }
+        }
+
+        // return if we still have any child branches, can't be optimized further
+        if (branch.some((b) => b != null && b.length == 4)) return branch;
+
+        // then, merge if the leaves are identical
+        const firstLeaf = branch[0];
+        var leavesEqual = true;
+        for (var i = 1; i < 4; i++) {
+            if (firstLeaf === branch[i]) {
+                // good match, probably because they're both null
+                continue;
+            } else if (firstLeaf === null && branch[i] !== null) {
+                leavesEqual = false;
+                break;
+            } else if (firstLeaf !== null && branch[i] === null) {
+                leavesEqual = false;
+                break;
+            } else {
+                if (!arraysEqual(firstLeaf, branch[i])) {
+                    leavesEqual = false;
+                    break;
+                }
+            }
+        }
+        
+        return leavesEqual ? branch[0] : branch;
+    }
+
+    buildBranchBricks(basePos, branch, branchDepth) {
+        const bricks = [];
+        for (var i = 0; i < 4; i++) {
+            if (branch[i] == null) {
+                // discard this leaf, it's not a brick so it needn't be built
+            } else if (branch[i].length == 4) {
+                // this is a branch
+                this.buildBranchBricks(basePos, branch[i], [...branchDepth, i]).forEach((b) => bricks.push(b));
+            } else {
+                // this is a leaf
+                const leafSizeUnits = Math.pow(2, this.depth - branchDepth.length - 1);
+                const pixelPosition = [0, 0];
+                for (var j = 0; j < branchDepth.length; j++) {
+                    const depthPosition = this.getPixelPosition(branchDepth[j], Math.pow(2, this.depth - j));
+                    pixelPosition[0] += depthPosition[0];
+                    pixelPosition[1] += depthPosition[1];
+                }
+                const finalDepthPosition = this.getPixelPosition(i, leafSizeUnits * 2);
+                pixelPosition[0] += finalDepthPosition[0];
+                pixelPosition[1] += finalDepthPosition[1];
+                const [px, py, pz] = basePos;
+                const [x, y] = pixelPosition;
+                bricks.push({
+                    "asset_name_index": 0,
+                    "size": [1, leafSizeUnits, leafSizeUnits],
+                    "position": [px, py + 20 + x * 2 + leafSizeUnits, pz + y * 2 + leafSizeUnits],//[px, py + 20 + x * 2 + leafSizeUnits, pz + y * 2 + leafSizeUnits],
+                    "color": [...branch[i], 255]
+                });
+            }
+        }
+        return bricks;
+    }
+
+    buildBricks(basePos) {
+        const bricks = this.buildBranchBricks(basePos, this.tree, []);
+        console.log(bricks.length);
+        return bricks;
+    }
+}
+
 class Camera {
     constructor(vw, vh, origin, fov, yaw, pitch) {
         this.vw = vw;
@@ -317,12 +452,14 @@ class Atmosphere {
     }
 
     colorFromVec(vec) {
-        const c = this.distFromZenith(vec);
+        /*const c = this.distFromZenith(vec);
         return [
             lerp(this.zenith[0], this.horizon[0], c),
             lerp(this.zenith[1], this.horizon[1], c),
             lerp(this.zenith[2], this.horizon[2], c)
-        ]
+        ]*/
+        // Temporary change for image compression
+        return this.horizon;
     }
 }
 
@@ -420,6 +557,23 @@ class CylinderObject extends SceneObject {
 
 const lerp = (a, b, c) => a + (b - a) * c;
 const lerpCol = (a, b, c) => [lerp(a[0], b[0], c), lerp(a[1], b[1], c), lerp(a[2], b[2], c)];
+const nextHighestPowerOf2 = (v) => {
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    return ++v;
+};
+const arraysEqual = (a, b) => {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+        if (a[i] !== b[i])
+            return false;
+    }
+    return true;
+};
 
 class Raytracer {
     constructor(omegga, config, store) {
@@ -430,8 +584,8 @@ class Raytracer {
 
     async init() {
         const settings = {
-            width: 150,
-            height: 100,
+            width: 64,
+            height: 64,
             verticalFov: 50,
             diffuseCoefficient: 1,
             ambientCoefficient: 0.2,
@@ -439,7 +593,7 @@ class Raytracer {
             castShadows: true,
             shadowCoefficient: 0.4,
             maxReflectionDepth: 3, // set to 0 to disable reflections
-            renderPlayers: true
+            renderPlayers: false
         };
 
         this.omegga.on("chatcmd:set", async (name, setting, ...values) => {
@@ -491,29 +645,23 @@ class Raytracer {
             const camera = new Camera(settings.width, settings.height, new Vector3(...pos), settings.verticalFov, (parseFloat(yaw) || 0) * Math.PI / 180, (parseFloat(pitch) || 0) * Math.PI / 180);
             const scene = new Scene(camera, settings.diffuseCoefficient, settings.ambientCoefficient, settings.lightVector, settings.castShadows, settings.shadowCoefficient);
             scene.maxReflectionDepth = settings.maxReflectionDepth;
+            scene.renderPlayers = settings.renderPlayers;
+
             this.omegga.broadcast("Scene initialized. Populating scene objects...");
             await scene.populateScene(save, this.omegga);
+
             this.omegga.broadcast("Scene populated. Rendering...");
             const img = scene.render();
 
             // image generated, load it into the world
             const newPos = await player.getPosition();
-            this.omegga.broadcast("Rendered. Importing save...");
-            const brickGen = [];
-            for (var y = 0; y < settings.height; y++) {
-                for (var x = 0; x < settings.width; x++) {
-                    var col = img[y][x];
-                    if (col == null) col = [255, 255, 255, 100]; else col = [...col, 255];
-                    const [px, py, pz] = newPos.map((n) => Math.floor(n + 0.5));
-                    const brick = {
-                        "asset_name_index": 0,
-                        "size": [1, 1, 1],
-                        "position": [px, py + 20 + x * 2, pz + y * 2],
-                        "color": col
-                    };
-                    brickGen.push(brick);
-                }
-            }
+
+            this.omegga.broadcast("Rendered. Optimizing quadtree and importing...");
+            const quadtree = new Quadtree(img);
+            quadtree.createTree();
+            quadtree.optimizeTree();
+
+            const brickGen = quadtree.buildBricks(newPos.map((n) => Math.floor(n + 0.5)));
 
             this.omegga.loadSaveData({"brick_assets": ["PB_DefaultMicroBrick"], "bricks": brickGen}, 0, 0, 0, true);
             this.omegga.broadcast("Raytrace complete.");
