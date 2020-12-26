@@ -24,8 +24,8 @@ omegga-raytracer has two commands that are both host-only.
 
 | **Command** | **Arguments** | **Example** | **Description** |
 | --- | --- | --- | --- |
-| `!trace`  | &lt;yaw&gt; &lt;pitch&gt; | `!trace 45 -30` | Starts a raytrace with the given camera rotation from the position of your torso. |
-| `!set`    | &lt;setting&gt; &lt;value&gt; | `!set renderPlayers true` | Sets the value of a setting for the raytracer. Setting values do not persist over plugin reloads/server restarts. |
+| `!trace` | `<yaw> <pitch>` | `!trace 45 -30` | Starts a raytrace with the given camera rotation from the position of your torso. |
+| `!set` | `<setting> <value>` | `!set renderPlayers true` | Sets the value of a setting for the raytracer. Setting values do not persist over plugin reloads/server restarts. |
 
 Below are a list of the settings available with `!set`:
 
@@ -49,7 +49,7 @@ and generates a "scene" in which ray hits and bounces will be calculated.
 
 The "scene" is composed of arbitrary `SceneObject`s like the `AxisAlignedBoxObject` (the object
 all bricks render by) or the `PlaneObject` (used to render the ground plane). For every pixel
-in the image, a ray is shot out from the camera's origin. All objects[^1] in the scene are tested for
+in the image, a ray is shot out from the camera's origin. All objects<sup>\[1\]</sup> in the scene are tested for
 an intersection and compared. When these intersections are tested, the renderer also tests for
 properties like reflectance, transparency, and shadows, casting rays out in other directions.
 
@@ -60,7 +60,7 @@ each leaf as deep as possible. Then, the optimizer recursively indexes through e
 the tree, merging if they are composed of identical leaves. Finally, the quadtree brick builder
 constructs the tree out of bricks, generates a save, and loads it in.
 
-[^1]: No acceleration structures are currently used for testing many objects. I would like to
+\[1\]: No acceleration structures are currently used for testing many objects. I would like to
 eventually implement a [BVH](https://en.wikipedia.org/wiki/Bounding_volume_hierarchy) to
 reduce computation for renders that test large amounts of bricks.
 
