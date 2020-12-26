@@ -127,37 +127,6 @@ class Ray {
         return this.origin.add(this.direction.scale(ap.dot(ab) / ab.dot(ab)));
     }
 
-    // legacy box intersection
-    intersectsPrism(origin, size) {
-        const p = this.closestPoint(origin);
-        const d = p.subtract(origin);
-        return (d.x >= -size.x && d.x <= size.x &&
-            d.y >= -size.y && d.y <= size.y &&
-            d.z >= -size.z && d.z <= size.z) ?
-            p :
-            null;
-    }
-
-    // legacy box intersection (replaced in favor of SceneObjects)
-    boxIntersection(origin, size) {
-        const ro = this.origin.subtract(origin);
-        const s = new Vector3(
-            this.direction.x < 0 ? 1 : -1,
-            this.direction.y < 0 ? 1 : -1,
-            this.direction.z < 0 ? 1 : -1
-        );
-        const t1 = this.m.multiply(ro.negate().add(s.multiply(size)));
-        const t2 = this.m.multiply(ro.negate().subtract(s.multiply(size)));
-        const tn = Math.max(Math.max(t1.x, t1.y), t1.z);
-        const tf = Math.min(Math.min(t2.x, t2.y), t2.z);
-        if (tn > tf || tf < 0) return null;
-        var normal;
-        if (t1.x > t1.y && t1.x > t1.z) normal = new Vector3(s.x, 0, 0)
-        else if (t1.y > t1.z) normal = new Vector3(0, s.y, 0)
-        else normal = new Vector3(0, 0, s.z);
-        return [tn, tf, normal];
-    }
-
     // Get a point down the ray, t units.
     pointAlong(t) {
         return this.origin.add(this.direction.normalize().scale(t));
@@ -176,6 +145,8 @@ class Scene {
         this.shadowCoefficient = sc || 0.4;
         this.maxReflectionDepth = 1;
         this.renderPlayers = true;
+        this.renderGroundPlane = true;
+        this.groundPlaneColor = [92, 148, 84];
     }
 
     async populateScene(save, omegga) {
@@ -187,7 +158,6 @@ class Scene {
             var [sx, sy, sz] = brick.size;
             var nsx = 0, nsy = 0, nsz = 0;
 
-            // todo: test these, currently only dirs 4 and 5 work
             if (dir == 0) { // x
                 nsx = sz;
                 nsy = rot == 0 ? sy : sx;
@@ -221,12 +191,12 @@ class Scene {
                 const pa = pos.subtract(new Vector3(0, 0, 20));
                 const pb = pos.add(new Vector3(0, 0, 20));
                 this.objects.push(new CylinderObject(pa, pb, 10, [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)]));
-                //this.objects.push(new AxisAlignedBoxObject(new Vector3(...obj.pos), new Vector3(10, 10, 30), [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)]));
             });
         }
 
         // the ground plane
-        this.objects.push(new PlaneObject(new Vector3(0, 0, 0), new Vector3(0, 0, 1), [58, 166, 60]));
+        if (this.renderGroundPlane)
+            this.objects.push(new PlaneObject(new Vector3(0, 0, 0), new Vector3(0, 0, 1), this.groundPlaneColor));
     }
 
     // Returns the object {object: <object intersected>, near: <tnear>, far: <tfar>, normal: <normal>}
@@ -420,9 +390,7 @@ class Quadtree {
     }
 
     buildBricks(basePos) {
-        const bricks = this.buildBranchBricks(basePos, this.tree, []);
-        console.log(bricks.length);
-        return bricks;
+        return this.buildBranchBricks(basePos, this.tree, []);
     }
 }
 
@@ -556,8 +524,8 @@ class CylinderObject extends SceneObject {
         if (h < 0.0) return null;
         h = Math.sqrt(h);
         var t = (-k1 - h) / k2;
-        const y = baoc +  t * bard;
         if (t < 0.0) return null;
+        const y = baoc + t * bard;
         if (y > 0.0 && y < baba) return [t, t, (oc.add(ray.direction.scale(t)).subtract(ba.scale(y).scale(1/baba)).scale(1/this.radius))];
         t = ((y < 0 ? 0 : baba) - baoc) / bard;
         if (Math.abs(k1 + k2 * t) < h) return [t, t, ba.scale(y == 0 ? 0 : (y > 0 ? 1 : -1)).scale(1/baba)];
@@ -603,7 +571,8 @@ class Raytracer {
             castShadows: true,
             shadowCoefficient: 0.4,
             maxReflectionDepth: 3, // set to 0 to disable reflections
-            renderPlayers: false
+            renderPlayers: false,
+            renderGroundPlane: true
         };
 
         this.omegga.on("chatcmd:set", async (name, setting, ...values) => {
@@ -637,6 +606,9 @@ class Raytracer {
             } else if (setting == "renderPlayers") {
                 settings.renderPlayers = values[0] == "true" || values[0] == "on";
                 this.omegga.broadcast(`Rendering players set to ${settings.castShadows}.`);
+            } else if (setting == "renderGroundPlane") {
+                settings.renderGroundPlane = values[0] == "true" || values[0] == "on";
+                this.omegga.broadcast(`Rendering ground plane set to ${settings.renderGroundPlane}.`);
             } else {
                 this.omegga.broadcast(`Invalid setting name <code>${setting}</code>.`);
                 return;
