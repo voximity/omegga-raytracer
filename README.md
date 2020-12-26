@@ -23,12 +23,14 @@ omegga-raytracer has no dependencies and no Omegga config properties. No setup i
 omegga-raytracer has two commands that are both host-only.
 
 | **Command** | **Arguments** | **Example** | **Description** |
+| --- | --- | --- | --- |
 | `!trace`  | &lt;yaw&gt; &lt;pitch&gt; | `!trace 45 -30` | Starts a raytrace with the given camera rotation from the position of your torso. |
 | `!set`    | &lt;setting&gt; &lt;value&gt; | `!set renderPlayers true` | Sets the value of a setting for the raytracer. Setting values do not persist over plugin reloads/server restarts. |
 
 Below are a list of the settings available with `!set`:
 
 | **Setting** | **Description** | **Default value** | **Example** |
+| --- | --- | --- | --- |
 | `res`, `resolution` | The resolution of the scene in pixels. | `64 64` | `!set res 300 200` sets the resolution to 300x200 pixels |
 | `fov` | The field of view of the scene camera. | `50` | `!set res 90` sets the FOV to 90 degrees |
 | `diffuse`, `diffuseCoefficient` | A number from 0 to 1 representing the diffuse coefficient. | `1` | `!set diffuse 0.5` sets the diffuse coefficient to 0.5 |
