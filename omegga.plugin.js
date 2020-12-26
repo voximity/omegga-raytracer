@@ -207,8 +207,10 @@ class Scene {
             }
 
             const color = typeof(brick.color) == "number" ? save.colors[brick.color] : brick.color;
-            const reflectiveness = save.materials[brick.material_index] == "BMC_Metallic" ? 0.4 : 0; // REFLECTIVITY VALUE HARDCODED
-            this.objects.push(new AxisAlignedBoxObject(pos, new Vector3(nsx, nsy, nsz), color.slice(0, 3), reflectiveness));
+            const box = new AxisAlignedBoxObject(pos, new Vector3(nsx, nsy, nsz), color.slice(0, 3))
+            box.reflectiveness = save.materials[brick.material_index] == "BMC_Metallic" ? 0.4 : 0;
+            box.transparency = color[3] < 255 ? color[3] / 255 : 0;
+            this.objects.push(box);
         });
 
         if (this.renderPlayers) {
@@ -253,6 +255,13 @@ class Scene {
         } else {
             const coeff = lerp(this.diffuseCoefficient, this.ambientCoefficient, Math.min(this.lightVector.angleBetween(hit.normal) / Math.PI * 0.5, 1));
             var color = hit.object.sRGB().slice(0, 3).map((c) => c * coeff);
+
+            // transparency calculation (reflection on transparent objects unsupported)
+            if (hit.object.transparency > 0.1 && hit.object.reflectiveness < 0.1) {
+                const continuingRay = new Ray(ray.pointAlong(hit.far + 0.01), ray.direction);
+                const continuingColor = this.getRayColor(continuingRay, this.objects);
+                color = lerpCol(color, continuingColor, hit.object.transparency);
+            }
 
             // shadow calculation
             if (this.castShadows) {
@@ -464,9 +473,10 @@ class Atmosphere {
 }
 
 class SceneObject {
-    constructor(color, reflectiveness) {
+    constructor(color) {
         this.color = color;
-        this.reflectiveness = reflectiveness || 0;
+        this.reflectiveness = 0;
+        this.transparency = 0;
     }
 
     // Returns [t_near, t_far, hit_normal] if hit, otherwise returns null
@@ -482,8 +492,8 @@ class SceneObject {
 }
 
 class AxisAlignedBoxObject extends SceneObject {
-    constructor(pos, size, color, reflectiveness) {
-        super(color, reflectiveness);
+    constructor(pos, size, color) {
+        super(color);
         this.pos = pos;
         this.size = size;
     }
@@ -526,8 +536,8 @@ class PlaneObject extends SceneObject {
 }
 
 class CylinderObject extends SceneObject {
-    constructor(pa, pb, radius, color, reflectiveness) {
-        super(color, reflectiveness);
+    constructor(pa, pb, radius, color) {
+        super(color);
         this.pa = pa;
         this.pb = pb;
         this.radius = radius;
